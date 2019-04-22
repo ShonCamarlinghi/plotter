@@ -20,6 +20,7 @@ pattern = '*traceroute*'
 # r'100Mb*iperf*' : 'avg_iperf_mbits.awk'
 
 def main():
+    BAD_DATA = os.path.join(home, 'BAD_DATA.txt')  # record of logs that are too short
     os.chdir(home)
     # prepare resultDir to store output files
     resultDir = os.path.join(home, 'resultDir')
@@ -47,9 +48,10 @@ def main():
     #     os.makedirs(resultdir)
     #
 
-    # GO to raw log directory and open file for processing
+    # Go to raw log directory and open file for processing
     os.chdir(topLogDir)
     os.listdir(topLogDir)
+
 
     for root, dirs, files in os.walk(topLogDir, topdown=True):
         print(root, dirs, files)
@@ -61,47 +63,71 @@ def main():
             logDir = os.getcwd()
             logName = filename
             print(logDir, logName)
-            logCleaned, logPlot, resultSubdir = awk_traceroute_log_cleaner(pattern, logDir, logName, resultDir)
+            logCleaned, logPlot, resultSubdir = awk_traceroute_log_cleaner(pattern, logDir, logName, resultDir, BAD_DATA)
             logData, min, max, avg, mode = loadData(logCleaned)
             plotData(logName, logData, logPlot, min, max, avg, mode)
 
         print("Done processing data.. ")
-
+        print("Following files were too short to process:\n")
+        fo = open(BAD_DATA, 'a+')
+        for items in fo.readlines():
+            print(items.strip())
+        fo.close()
 
 
 ######## functions ########
 
-def awk_traceroute_log_cleaner(pattern, logDir, logName, resultDir):
-    # type: (object, object, object) -> object
-    #home = os.getcwd()
-    awk_tools = {r'*traceroute*': 'avg.awk',
-                 r'1G*iperf': 'avg_iperf_Gbits.awk',
-                 r'100Mb*iperf*': 'avg_iperf_mbits.awk'
-                 }
-    for key in awk_tools:
-        if pattern == key:
-            s = awk_tools[key]
-            print(s)
-    awk_script = 'avg.awk'
-    # os.chdir(logDir)
-    awkFullPath = os.path.join(home, awk_script)
-    logFullPath = os.path.join(logDir, logName)
-    resultSubdir = os.path.join(resultDir, logName + '_out')  # directory for post-processed log and plot
-    if os.path.exists(resultSubdir):  # remove old results
-        print("%s\n already exists", resultSubdir)
+def awk_traceroute_log_cleaner(pattern, logDir, logName, resultDir, BAD_DATA):
+    """
+
+    :type logDir: object
+    """
+    # type: (object, object, object) -> object;
+    #input var type check
+    print("input var type check for function \n"
+          "def awk_traceroute_log_cleaner(pattern, logDir, logName, resultDir, BAD_DATA)\n",
+          type(pattern), type(logDir), type(logName), type(resultDir), type(BAD_DATA))
+
+
+
+    # exit if line count < 1000 in the raw log
+    os.chdir(logDir)
+    num_lines = sum(1 for line in open(logName))
+    if num_lines < 1000:
+        print(logName, "has only %d lines, please check your log and try again\n" % (num_lines),
+              "writing info to BAD_DATA.txt\n")
+        print(type(BAD_DATA))
+        fo = open(BAD_DATA, 'a+')
+        fo.write(logName)
+        fo.close()
+
+        with open(BAD_DATA, 'a+') as fo:
+            fo.writelines(logName)
     else:
-        os.makedirs(resultSubdir)
-    logCleaned = os.path.join(resultSubdir, logName + '_CLEANED.txt')
-    logPlot = os.path.join(resultSubdir, logName + '_plot.png')
+    # awk_tools = {r'*traceroute*': 'avg.awk',
+    #              r'1G*iperf': 'avg_iperf_Gbits.awk',
+    #              r'100Mb*iperf*': 'avg_iperf_mbits.awk'
+    #              }
+    # for key in awk_tools:
+    #     if pattern == key:
+    #         s = awk_tools[key]
+    #         print(s)
+        awk_script = 'avg.awk'
+        awkFullPath = os.path.join(home, awk_script)
+        logFullPath = os.path.join(logDir, logName)
+        resultSubdir = os.path.join(resultDir, logName + '_out')  # directory for post-processed log and plot
+        if os.path.exists(resultSubdir):
+            print("%s\n already exists", resultSubdir)
+        else:
+            os.makedirs(resultSubdir)
+        logCleaned = os.path.join(resultSubdir, logName + '_CLEANED.txt')
+        logPlot = os.path.join(resultSubdir, logName + '_plot.png')
 
-    # print ("\nFullpath to raw log: %s\nresultDir: %s\nAWK cleaner script: %s\nCleanLog: %s\nPlotAndStats: %s\n") % \
-    # (logFullPath, resultDir, awkFullPath, logCleaned, logPlot)
+        cmd = 'awk -f ' + awkFullPath + ' ' + logFullPath + ' > ' + logCleaned  # raw log processed to cleaned
+        os.system(cmd)
+        print("Extracted data from: %s\n to: %s\n Plot file: %s\n " % (logFullPath, logCleaned, logPlot))
 
-    cmd = 'awk -f ' + awkFullPath + ' ' + logFullPath + ' > ' + logCleaned  # raw log processed to cleaned
-    os.system(cmd)
-    print("Extracted data from: %s\n to: %s\n Plot file: %s\n " % (logFullPath, logCleaned, logPlot))
-
-    return logCleaned, logPlot, resultSubdir
+        return logCleaned, logPlot, resultSubdir
 
 
 def loadData(logCleaned):
@@ -119,8 +145,8 @@ def loadData(logCleaned):
     return logData, min, max, avg, mode
 
 
-def plotData(logName, logData, logPlot, min, max, avg,
-             mode):  # logData; np array, logPlot: string filename to save plot to
+def plotData(logName, logData, logPlot, min, max, avg, mode):
+          # logData is np array; logPlot is a string filename to save plot to
     # fonts
     font = {'family': 'serif', 'color': 'darkred', 'weight': 'normal', 'size': 10, }
     # xlabel
