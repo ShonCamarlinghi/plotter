@@ -1,133 +1,108 @@
-import os, os.path, fnmatch, re, shutil, glob, time
-from typing import Union
-
+import os
+import fnmatch
+import re
+import functools
+import itertools
+import shutil
+from datetime import datetime
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy import stats
-
-# avg_total 0.389053  (without rounding, done in awk)
 
 # logDir = '/Users/iris7/Sand/PycharmProjects/plotter/logDir'
 # logName = 'traceroute_perf.sh.8266.run'
 # awkScript = 'avg.awk'
 home = '/Users/iris7/Sand/PycharmProjects/plotter'
-topLogDir = '/Users/iris7/Sand/PycharmProjects/plotter/logDir'  # root dir with logs
-pattern = '*traceroute*'
+topLogDir = '/Users/iris7/Sand/logDir'  # root dir with logs
+patterns = [r'*traceroute*run',  r'1G*iperf', r'100Mb*iperf*']
 
-
-# r'*traceroute*' : 'avg.awk',
-# r'1G*iperf' : 'avg_iperf_Gbits.awk',
-# r'100Mb*iperf*' : 'avg_iperf_mbits.awk'
+# patterns = {r'*traceroute*run': 'avg.awk',
+#               r'1G*iperf': 'avg_iperf_Gbits.awk',
+#               r'100Mb*iperf*': 'avg_iperf_mbits.awk',
+#               }
 
 def main():
-    BAD_DATA = os.path.join(home, 'BAD_DATA.txt')  # record of logs that are too short
-    os.chdir(home)
+    timestamp = "{:%Y_%m_%d}".format(datetime.now())
+    print(timestamp)
+
     # prepare resultDir to store output files
-    resultDir = os.path.join(home, 'resultDir')
+    resultDir = os.path.join(topLogDir, 'resultDir')
+    readmeTxt = os.path.join(topLogDir, 'README.txt')
+    # if os.path.exists(resultDir):
+    #     print("%s already exists", resultDir)
+    # else:
+    #     os.makedirs(resultDir)
+    #
     if os.path.exists(resultDir):
-        print("%s already exists", resultDir)
+        backup_delete = input("\n\nlet's backup or delete old results %s before we process raw data, \nenter 'b' to back up or 'd' to delete: " % resultDir)
+        if 'b' in backup_delete:
+            resultdir_backup = resultDir + '_backup' + timestamp
+            print("saving your previous test results to %s" % resultdir_backup)
+            os.rename(resultDir, resultdir_backup)
+
+            with open(readmeTxt) as readme:
+                readme.write("\n\nbacked up previous test results to %s. \n" % resultdir_backup)
+            os.makedirs(resultDir)
+          #  except:
+              #  raise exception
+        elif 'd' in backup_delete:
+            print("you chose to delete content of previous in %s" % resultDir)
+            shutil.rmtree(resultDir)
+            os.makedirs(resultDir)
     else:
         os.makedirs(resultDir)
 
-    #     backup_delete = input("\n\nlet's backup or delete old results %s before we process raw data, \nenter b to back up or d to delete: " % resultdir)
-    #     if 'b' in backup_delete:
-    #         try:
-    #             resultdir_backup = resultdir + '_backup' + str(time.time())
-    #             print("saving your previous test results to %s" % resultdir_backup)
-    #             os.rename(resultdir, resultdir_backup)
-    #             with open(resultdir + "/readme.txt", "a+") as readme:
-    #                 readme.write("\n\nbacked up previous test results to %s. \n" % resultdir_backup)
-    #             os.makedirs(resultdir)
-    #         except oserror as oserror:
-    #             raise e
-    #     elif 'd' in backup_delete:
-    #         print("you chose to delete content of previous checksum test in %s" % resultdir)
-    #         shutil.rmtree(resultdir)
-    #         os.makedirs(resultdir)
-    # else:
-    #     os.makedirs(resultdir)
-    #
+    BAD_DATA = os.path.join(topLogDir, 'BAD_DATA.txt')  # record of logs that are too short
 
-    # Go to raw log directory and open file for processing
-    os.chdir(topLogDir)
-    os.listdir(topLogDir)
-
-
-    for root, dirs, files in os.walk(topLogDir, topdown=True):
-        print(root, dirs, files)
-        # for dirName in dirs:
-        # print dirName
-        for filename in fnmatch.filter(files, pattern):
-            # print filename
-            # filename = os.path.join(name, fn)
-            logDir = os.getcwd()
-            logName = filename
-            print(logDir, logName)
-            logCleaned, logPlot, resultSubdir = awk_traceroute_log_cleaner(pattern, logDir, logName, resultDir, BAD_DATA)
-            logData, min, max, avg, mode = loadData(logCleaned)
-            plotData(logName, logData, logPlot, min, max, avg, mode)
-
-        print("Done processing data.. ")
-        print("Following files were too short to process:\n")
-        fo = open(BAD_DATA, 'a+')
-        for items in fo.readlines():
-            print(items.strip())
-        fo.close()
-
-
-######## functions ########
-
-def awk_traceroute_log_cleaner(pattern, logDir, logName, resultDir, BAD_DATA):
-    """
-
-    :type logDir: object
-    """
-    # type: (object, object, object) -> object;
-    #input var type check
-    print("input var type check for function \n"
-          "def awk_traceroute_log_cleaner(pattern, logDir, logName, resultDir, BAD_DATA)\n",
-          type(pattern), type(logDir), type(logName), type(resultDir), type(BAD_DATA))
-
-
-
-    # exit if line count < 1000 in the raw log
-    os.chdir(logDir)
-    num_lines = sum(1 for line in open(logName))
-    if num_lines < 1000:
-        print(logName, "has only %d lines, please check your log and try again\n" % (num_lines),
-              "writing info to BAD_DATA.txt\n")
-        print(type(BAD_DATA))
-        fo = open(BAD_DATA, 'a+')
-        fo.write(logName)
-        fo.close()
-
-        with open(BAD_DATA, 'a+') as fo:
-            fo.writelines(logName)
-    else:
-    # awk_tools = {r'*traceroute*': 'avg.awk',
-    #              r'1G*iperf': 'avg_iperf_Gbits.awk',
-    #              r'100Mb*iperf*': 'avg_iperf_mbits.awk'
-    #              }
-    # for key in awk_tools:
-    #     if pattern == key:
-    #         s = awk_tools[key]
-    #         print(s)
-        awk_script = 'avg.awk'
-        awkFullPath = os.path.join(home, awk_script)
-        logFullPath = os.path.join(logDir, logName)
-        resultSubdir = os.path.join(resultDir, logName + '_out')  # directory for post-processed log and plot
-        if os.path.exists(resultSubdir):
-            print("%s\n already exists", resultSubdir)
+    for logName in searchTree(topLogDir, patterns):
+        print(logName)
+        num_lines = sum(1 for line in open(logName))
+        if num_lines < 1000:
+            print(logName, "has only %d lines, please check your log and try again\n" % (num_lines),
+                  "writing info to BAD_DATA.txt\n")
+            with open(BAD_DATA, 'a+') as fo:
+                fo.writelines(logName)
         else:
-            os.makedirs(resultSubdir)
-        logCleaned = os.path.join(resultSubdir, logName + '_CLEANED.txt')
-        logPlot = os.path.join(resultSubdir, logName + '_plot.png')
+            logCleaned, logPlot, resultSubdir = awk_traceroute_log_cleaner(logName, resultDir)
+            logData, min, max, avg, mode = loadData(logCleaned)
+            plotData(resultDir, logName, logData, logPlot, min, max, avg, mode)
 
-        cmd = 'awk -f ' + awkFullPath + ' ' + logFullPath + ' > ' + logCleaned  # raw log processed to cleaned
-        os.system(cmd)
-        print("Extracted data from: %s\n to: %s\n Plot file: %s\n " % (logFullPath, logCleaned, logPlot))
 
-        return logCleaned, logPlot, resultSubdir
+
+    print("Done processing data.. ")
+    print("Following files were too short to process:")
+    fo = open(BAD_DATA, 'a+')
+    for items in fo.readlines():
+        print(items.strip())
+    fo.close()
+
+    print("Copies of all plots saved in", resultDir)
+
+
+############################# FUNCTIONS ################################
+
+def awk_traceroute_log_cleaner( logName, resultDir ):
+    # input var type check USE @beartype
+    # print("input var type check for function \n"
+    #       "def awk_traceroute_log_cleaner(logName, resultDir \n",
+    #       (type(logName), type(resultDir)))
+
+    awk_script = 'avg.awk'
+    awkFullPath = os.path.join(home, awk_script)
+
+    resultSubdir = os.path.join(resultDir, logName + '_out')  # directory for post-processed log and plot
+    if os.path.exists(resultSubdir):
+        print("%s\n already exists", resultSubdir)
+    else:
+        os.makedirs(resultSubdir)
+    logCleaned = os.path.join(resultSubdir, os.path.basename(logName) + '_CLEANED.txt')
+    logPlot = os.path.join(resultSubdir, os.path.basename(logName) + '_plot.png')
+
+    cmd = 'awk -f ' + awkFullPath + ' ' + logName + ' > ' + logCleaned  # raw log processed to cleaned
+    os.system(cmd)
+    print("Extracted data from: %s\n to: %s\n Plot file: %s\n " % (logName, logCleaned, logPlot))
+
+    return logCleaned, logPlot, resultSubdir
 
 
 def loadData(logCleaned):
@@ -145,8 +120,8 @@ def loadData(logCleaned):
     return logData, min, max, avg, mode
 
 
-def plotData(logName, logData, logPlot, min, max, avg, mode):
-          # logData is np array; logPlot is a string filename to save plot to
+def plotData(resultDir, logName, logData, logPlot, min, max, avg, mode):
+    # logData is np array; logPlot is a string filename to save plot to
     # fonts
     font = {'family': 'serif', 'color': 'darkred', 'weight': 'normal', 'size': 10, }
     # xlabel
@@ -178,10 +153,11 @@ def plotData(logName, logData, logPlot, min, max, avg, mode):
                 frameon=None)
 
     plt.close()  # done plotting.
-    print("saved plot in ", logPlot)
+    print("\nSaved plot in ", logPlot)
+    os.system("cp " + logPlot + " " + resultDir) # save copy in resultDir
 
 
-def crawler(value, pattern, patternL):
+def findFile_and_rename(value, pattern, patternL):
     for root, dirs, files in os.walk(value, topdown=True):
         for name in dirs:
             for fn in fnmatch.filter(files, pattern):
@@ -192,15 +168,26 @@ def crawler(value, pattern, patternL):
                 newFilename = os.path.join(value, nn)
                 print("Renaming %s to %s" % (fn, nn))
                 os.rename(filename, newFilename)
-
             print("Done renaming files in %s" % value)
 
 
-# Exception e:
-# (
-#    print "could not find logs with 'traceroute' or 'iperf' pattern"
-#    print "please rename logs to reflect actual content, i.e.\n" \
-#                "'24hr_iperf_1Gb' or 'traceroute_10MBs', etc.");
+def searchTree(dir_path: str=None, patterns: [str]=None) -> [str]:
+    """
+    Returns a generator yielding files matching the given patterns
+    :type dir_path: str
+    :type patterns: [str]
+    :rtype : [str]
+    :param dir_path: Directory to search for files/directories under. Defaults to current dir.
+    :param patterns: Patterns of files to search for. Defaults to ["*"]. Example: ["*.json", "*.xml"]
+    """
+    path = dir_path or "."
+    path_patterns = patterns or ["*"]
+
+    for root_dir, dir_names, file_names in os.walk(path):
+        filter_partial = functools.partial(fnmatch.filter, file_names)
+
+        for file_name in itertools.chain(*map(filter_partial, path_patterns)):
+            yield os.path.join(root_dir, file_name)
 
 
 if __name__ == '__main__':
